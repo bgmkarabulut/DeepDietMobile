@@ -47,8 +47,8 @@ export const Welcome: React.FC<WelcomeProps> = ({ onStart, onGuest }) => {
 
       // Kullanıcıya tertemiz uyarıyı gösteriyoruz
       Alert.alert(
-        "Kayıt Başarılı! 🎉",
-        "Hesabınız oluşturuldu. Lütfen az önce belirlediğiniz e-posta ve şifre ile giriş yapın.",
+        "Account Created",
+        "Your account has been created. Please log in with the email and password you specified.",
       );
 
       // Formu temizle ve Giriş moduna çek
@@ -64,7 +64,7 @@ export const Welcome: React.FC<WelcomeProps> = ({ onStart, onGuest }) => {
       if (error) {
         Alert.alert("Giriş Başarısız", error.message);
       } else if (data?.session) {
-        // Burası tetiklendiğinde App.tsx içindeki onStart fonksiyonu currentScreen'i "home" yapacak!
+        // Burası tetiklendiğinde App.tsx içindeki onStart fonksiyonu currentScreen'i "home" yapıyo
         onStart(data.session);
       }
     }
@@ -93,12 +93,12 @@ export const Welcome: React.FC<WelcomeProps> = ({ onStart, onGuest }) => {
           {/* Form Alanı Kartı */}
           <View style={styles.formCard}>
             <Text style={styles.formTitle}>
-              {isSignUp ? "Yeni Hesap Oluştur" : "Uygulamaya Giriş Yap"}
+              {isSignUp ? "Create an Account" : "Log In to Your Account"}
             </Text>
 
             <TextInput
               style={styles.input}
-              placeholder="E-posta Adresi"
+              placeholder="Email Address"
               placeholderTextColor="#94a3b8"
               value={email}
               onChangeText={setEmail}
@@ -108,7 +108,7 @@ export const Welcome: React.FC<WelcomeProps> = ({ onStart, onGuest }) => {
 
             <TextInput
               style={styles.input}
-              placeholder="Şifre"
+              placeholder="Password"
               placeholderTextColor="#94a3b8"
               value={password}
               onChangeText={setPassword}
@@ -127,7 +127,7 @@ export const Welcome: React.FC<WelcomeProps> = ({ onStart, onGuest }) => {
                 {/* ANA AKSİYON BUTONU (Soft Sağlık Yeşili) */}
                 <TouchableOpacity style={styles.button} onPress={handleAuth}>
                   <Text style={styles.buttonText}>
-                    {isSignUp ? "Hesap Oluştur ve Kaydol" : "Giriş Yap"}
+                    {isSignUp ? "Create an Account or Sign In" : "Log In"}
                   </Text>
                 </TouchableOpacity>
 
@@ -138,8 +138,8 @@ export const Welcome: React.FC<WelcomeProps> = ({ onStart, onGuest }) => {
                 >
                   <Text style={styles.toggleModeText}>
                     {isSignUp
-                      ? "Zaten bir hesabın var mı? Giriş Yap"
-                      : "Hesabın yok mu? Yeni Kayıt Oluştur"}
+                      ? "Already have an account? Log In"
+                      : "New here? Create an Account"}
                   </Text>
                 </TouchableOpacity>
               </>
@@ -148,7 +148,7 @@ export const Welcome: React.FC<WelcomeProps> = ({ onStart, onGuest }) => {
 
           {/* MİSAFİR MODU KÖPRÜSÜ */}
           <TouchableOpacity style={styles.guestButton} onPress={onGuest}>
-            <Text style={styles.guestText}>Misafir Olarak Devam Et</Text>
+            <Text style={styles.guestText}>Continue as Guest</Text>
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>

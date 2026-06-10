@@ -3,9 +3,11 @@ import { useFocusEffect } from "@react-navigation/native";
 import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   ScrollView,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from "react-native";
 
@@ -14,7 +16,12 @@ export default function ProgressScreen({ session }: any) {
   const [weeklyLogs, setWeeklyLogs] = useState<any[]>([]);
   const [mealHistory, setMealHistory] = useState<any[]>([]);
 
-  // Yerel saate göre YYYY-MM-DD formatında tarih üreten fonksiyon (Gün kaymasını önler)
+  // 🌟 Active selected date state (Defaults to today)
+  const [selectedDate, setSelectedDate] = useState<string>(
+    new Date().toISOString().split("T")[0],
+  );
+
+  // Safe helper function to generate YYYY-MM-DD local dates
   const getLocalDateOffsetString = (daysAgo: number) => {
     const localDate = new Date();
     localDate.setDate(localDate.getDate() - daysAgo);
@@ -32,9 +39,8 @@ export default function ProgressScreen({ session }: any) {
     try {
       setLoading(true);
 
-      // 1. Son 7 Günün Su ve Kalori Hedefi Verilerini Çek
+      // 1. Fetch last 7 days of daily_logs
       const startDateStr = getLocalDateOffsetString(7);
-
       const { data: logs, error: logsError } = await supabase
         .from("daily_logs")
         .select("*")
@@ -44,25 +50,24 @@ export default function ProgressScreen({ session }: any) {
 
       if (!logsError && logs) {
         setWeeklyLogs(logs);
-      } else if (logsError) {
-        console.log("⚠️ daily_logs çekme hatası:", logsError.message);
+        // Fallback to most recent log date if current selection is outside the list
+        if (logs.length > 0 && !logs.some((l) => l.date === selectedDate)) {
+          setSelectedDate(logs[0].date);
+        }
       }
 
-      // 2. Son Analiz Edilen Yemeklerin Geçmişini Çek (analysis_history)
+      // 2. Fetch all time analysis history for filtering
       const { data: history, error: historyError } = await supabase
         .from("analysis_history")
         .select("*")
         .eq("user_id", session.user.id)
-        .order("created_at", { ascending: false })
-        .limit(15);
+        .order("created_at", { ascending: false });
 
       if (!historyError && history) {
         setMealHistory(history);
-      } else if (historyError) {
-        console.log("⚠️ analysis_history çekme hatası:", historyError.message);
       }
     } catch (error) {
-      console.error("Progress verileri çekilirken genel hata:", error);
+      console.error("System error while fetching progress data:", error);
     } finally {
       setLoading(false);
     }
@@ -74,6 +79,13 @@ export default function ProgressScreen({ session }: any) {
     }, [session]),
   );
 
+  // Helper to format date cleanly (e.g., 26 May)
+  const formatDate = (dateStr: string) => {
+    if (!dateStr) return "";
+    const date = new Date(dateStr);
+    return date.toLocaleDateString("en-US", { day: "numeric", month: "short" });
+  };
+
   if (loading) {
     return (
       <View style={styles.center}>
@@ -81,20 +93,51 @@ export default function ProgressScreen({ session }: any) {
       </View>
     );
   }
+  // 🌟 DELETE MEAL FUNCTION
+  const handleDeleteMeal = async (mealId: string) => {
+    try {
+      // 1. Supabase'den sil
+      const { error } = await supabase
+        .from("analysis_history")
+        .delete()
+        .eq("id", mealId);
 
-  // Tarih formatlama yardımcı fonksiyonu (Örn: 24 May)
-  const formatDate = (dateStr: string) => {
-    if (!dateStr) return "";
-    const date = new Date(dateStr);
-    return date.toLocaleDateString("tr-TR", { day: "numeric", month: "short" });
+      if (error) throw error;
+
+      // 2. Ekrandaki state'i anlık güncelle (Filtrele)
+      setMealHistory((prev) => prev.filter((meal) => meal.id !== mealId));
+    } catch (error) {
+      console.error("Error deleting meal:", error);
+      Alert.alert("Error", "Could not delete the meal. Please try again.");
+    }
   };
+
+  // 🌟 DYNAMIC FILTERING LOGIC:
+  // Find current selected day log metrics
+  const activeLog = weeklyLogs.find((l) => l.date === selectedDate) || {
+    water_intake: 0,
+    calorie_target: 2200,
+  };
+
+  // Filter meal history to only match selected card date
+  const filteredMeals = mealHistory.filter((meal) => {
+    const mealDateStr = new Date(meal.created_at).toISOString().split("T")[0];
+    return mealDateStr === selectedDate;
+  });
+
+  // Calculate stats dynamically
+  const totalEatenCalories = filteredMeals.reduce(
+    (sum, m) => sum + (m.total_calories || 0),
+    0,
+  );
+  const remainingCalories = activeLog.calorie_target - totalEatenCalories;
 
   return (
     <ScrollView
       style={styles.container}
       contentContainerStyle={{ paddingBottom: 110 }}
     >
-      {/* Üst Başlık Alanı */}
+      {/* Top Welcome Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Progress & History 📈</Text>
         <Text style={styles.headerSub}>
@@ -102,7 +145,7 @@ export default function ProgressScreen({ session }: any) {
         </Text>
       </View>
 
-      {/* 📊 BÖLÜM 1: HAFTALIK GÜNLÜK ÖZET (Daily Logs Summary) */}
+      {/* SECTION 1: WEEKLY INSIGHT CARDS */}
       <Text style={styles.sectionTitle}>Weekly Insights</Text>
       <ScrollView
         horizontal
@@ -116,36 +159,106 @@ export default function ProgressScreen({ session }: any) {
             </Text>
           </View>
         ) : (
-          weeklyLogs.map((log) => (
-            <View key={log.id} style={styles.logCard}>
-              <Text style={styles.logDate}>{formatDate(log.date)}</Text>
-              <View style={styles.divider} />
+          weeklyLogs.map((log) => {
+            const isSelected = log.date === selectedDate;
+            return (
+              <TouchableOpacity
+                key={log.id}
+                activeOpacity={0.9}
+                onPress={() => setSelectedDate(log.date)}
+                style={[styles.logCard, isSelected && styles.selectedLogCard]}
+              >
+                <Text
+                  style={[styles.logDate, isSelected && styles.selectedText]}
+                >
+                  {formatDate(log.date)}
+                </Text>
+                <View
+                  style={[
+                    styles.divider,
+                    isSelected && { backgroundColor: "#A5D6A7" },
+                  ]}
+                />
 
-              <Text style={styles.statLabel}>Water Target</Text>
-              <Text style={styles.statValue}>{log.water_intake} Glasses</Text>
+                <Text style={styles.statLabel}>Water Intake</Text>
+                <Text
+                  style={[styles.statValue, isSelected && styles.selectedText]}
+                >
+                  💧 {log.water_intake}{" "}
+                  {log.water_intake === 1 ? "Glass" : "Glasses"}
+                </Text>
 
-              <Text style={[styles.statLabel, { marginTop: 8 }]}>
-                Calorie Budget
-              </Text>
-              <Text style={[styles.statValue, { color: "#2E7D32" }]}>
-                🎯 {log.calorie_target} kcal
-              </Text>
-            </View>
-          ))
+                <Text style={[styles.statLabel, { marginTop: 8 }]}>
+                  Calorie Target
+                </Text>
+                <Text
+                  style={[
+                    styles.statValue,
+                    {
+                      color: isSelected ? "#FFF" : "#2E7D32",
+                      fontWeight: "bold",
+                    },
+                  ]}
+                >
+                  🎯 {log.calorie_target} kcal
+                </Text>
+              </TouchableOpacity>
+            );
+          })
         )}
       </ScrollView>
 
-      {/* 🥗 BÖLÜM 2: ANALİZ EDİLEN YEMEKLERİN GEÇMİŞİ (Analysis History) */}
-      <Text style={styles.sectionTitle}>Recent Meals Logged</Text>
+      {/* SECTION 2: REPORT PANEL FOR SELECTED DAY */}
+      <Text style={styles.sectionTitle}>
+        {formatDate(selectedDate)} Summary Report
+      </Text>
+      <View style={styles.reportContainer}>
+        <View style={styles.reportRow}>
+          <View style={styles.reportBlock}>
+            <Text style={styles.reportLabel}>Daily Target</Text>
+            <Text style={styles.reportValue}>
+              {activeLog.calorie_target} <Text style={styles.unit}>kcal</Text>
+            </Text>
+          </View>
+          <View style={styles.reportBlock}>
+            <Text style={styles.reportLabel}>Calories Eaten</Text>
+            <Text style={[styles.reportValue, { color: "#E65100" }]}>
+              {totalEatenCalories} <Text style={styles.unit}>kcal</Text>
+            </Text>
+          </View>
+          <View style={styles.reportBlock}>
+            <Text style={styles.reportLabel}>Remaining</Text>
+            <Text style={[styles.reportValue, { color: "#2E7D32" }]}>
+              {remainingCalories < 0 ? 0 : remainingCalories}{" "}
+              <Text style={styles.unit}>kcal</Text>
+            </Text>
+          </View>
+        </View>
+
+        <View style={[styles.divider, { marginVertical: 14 }]} />
+
+        <View style={styles.waterReportRow}>
+          <Text style={styles.waterReportText}>💧 Total Water Logged:</Text>
+          <Text style={styles.waterReportValue}>
+            {activeLog.water_intake}{" "}
+            {activeLog.water_intake === 1 ? "Glass" : "Glasses"}
+          </Text>
+        </View>
+      </View>
+
+      {/* SECTION 3: MEALS COMPONENT FOR SELECTED DAY */}
+      <Text style={styles.sectionTitle}>
+        {formatDate(selectedDate)} Meal Diary
+      </Text>
       <View style={styles.historyListContainer}>
-        {mealHistory.length === 0 ? (
+        {filteredMeals.length === 0 ? (
           <View style={styles.emptyCardFull}>
             <Text style={styles.emptyText}>
-              You haven't scanned any meals yet.
+              No analyzed meals found for this date.
             </Text>
           </View>
         ) : (
-          mealHistory.map((meal) => (
+          filteredMeals.map((meal) => (
             <View key={meal.id} style={styles.mealCard}>
               <View style={styles.mealHeaderRow}>
                 <Text style={styles.mealName}>
@@ -154,47 +267,35 @@ export default function ProgressScreen({ session }: any) {
                     ? meal.detections[0].label
                     : "Analyzed Meal"}
                 </Text>
-                <Text style={styles.mealCalorie}>
-                  {meal.total_calories} kcal
-                </Text>
+
+                {/* 🌟 Silme Butonu ve Kalori Yan Yana */}
+                <View style={{ flexDirection: "row", alignItems: "center" }}>
+                  <Text style={styles.mealCalorie}>
+                    {meal.total_calories} kcal
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => handleDeleteMeal(meal.id)}
+                    style={{ marginLeft: 12, padding: 4 }}
+                  >
+                    <Text
+                      style={{
+                        color: "#ef4444",
+                        fontSize: 16,
+                        fontWeight: "bold",
+                      }}
+                    >
+                      ✕
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               </View>
 
-              {/* 🌟 SAAT DİLİMİ TÜRKİYE'YE ZORLANAN YENİ ALAN */}
               <Text style={styles.mealTime}>
                 Logged at:{" "}
-                {(() => {
-                  try {
-                    // 1. Eğer gelen veri geçersiz veya boşsa direkt boş dön
-                    if (!meal.created_at) return "00:00";
-
-                    // 2. Metnin içindeki saat kısmını bulalım (Örn: "20:34:00" veya "T20:34:00")
-                    // Her ihtimale karşı metindeki saat-dakika kalıbını regex ile cımbızlıyoruz
-                    const timeMatch = meal.created_at.match(/(\d{2}):(\d{2})/);
-
-                    if (timeMatch) {
-                      const dbHour = parseInt(timeMatch[1], 10);
-                      const dbMinute = timeMatch[2]; // Dakikayı string olarak tutalım, başında 0 olabilir
-
-                      // 3. Supabase UTC (20) gönderdiği için Türkiye saati (+3) ekliyoruz
-                      let localHour = dbHour + 3;
-
-                      // Eğer saat 24'ü geçerse ertesi güne taşacağı için modu alıyoruz
-                      if (localHour >= 24) {
-                        localHour = localHour - 24;
-                      }
-
-                      // Saatin başına gerekirse sıfır ekleyelim (Örn: 9 -> "09")
-                      const formattedHour = String(localHour).padStart(2, "0");
-
-                      return `${formattedHour}:${dbMinute}`;
-                    }
-
-                    return "00:00";
-                  } catch (e) {
-                    return "00:00";
-                  }
-                })()}{" "}
-                - {formatDate(meal.created_at)}
+                {new Date(meal.created_at).toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
               </Text>
 
               {Array.isArray(meal.detections) && meal.detections.length > 1 && (
@@ -227,13 +328,15 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: "#1e293b",
     marginHorizontal: 24,
-    marginTop: 20,
+    marginTop: 22,
     marginBottom: 12,
   },
   insightsScroll: { paddingLeft: 24, paddingRight: 12 },
+
+  // Card Defaults
   logCard: {
     backgroundColor: "#FFF",
-    width: 160,
+    width: 150,
     padding: 16,
     borderRadius: 20,
     marginRight: 12,
@@ -241,6 +344,17 @@ const styles = StyleSheet.create({
     shadowColor: "#000",
     shadowOpacity: 0.02,
     shadowRadius: 6,
+    borderWidth: 2,
+    borderColor: "transparent",
+  },
+  // Selection Styles 🌟
+  selectedLogCard: {
+    backgroundColor: "#2E7D32",
+    borderColor: "#1B5E20",
+    elevation: 6,
+    shadowColor: "#2E7D32",
+    shadowOpacity: 0.2,
+    shadowOffset: { width: 0, height: 4 },
   },
   logDate: {
     fontSize: 14,
@@ -248,6 +362,7 @@ const styles = StyleSheet.create({
     color: "#1e293b",
     textAlign: "center",
   },
+  selectedText: { color: "#FFF" },
   divider: { height: 1, backgroundColor: "#f1f5f9", marginVertical: 10 },
   statLabel: { fontSize: 11, color: "#94a3b8", fontWeight: "500" },
   statValue: {
@@ -256,6 +371,37 @@ const styles = StyleSheet.create({
     color: "#334155",
     marginTop: 2,
   },
+
+  // Dashboard Report Section
+  reportContainer: {
+    backgroundColor: "#FFF",
+    marginHorizontal: 24,
+    padding: 18,
+    borderRadius: 24,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOpacity: 0.03,
+  },
+  reportRow: { flexDirection: "row", justifyContent: "space-between" },
+  reportBlock: { alignItems: "center", flex: 1 },
+  reportLabel: {
+    fontSize: 12,
+    color: "#64748b",
+    fontWeight: "500",
+    marginBottom: 4,
+  },
+  reportValue: { fontSize: 18, fontWeight: "bold", color: "#1e293b" },
+  unit: { fontSize: 11, fontWeight: "normal", color: "#94a3b8" },
+  waterReportRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 6,
+  },
+  waterReportText: { fontSize: 14, fontWeight: "600", color: "#1565C0" },
+  waterReportValue: { fontSize: 15, fontWeight: "bold", color: "#1976D2" },
+
+  // List Items Configuration
   historyListContainer: { paddingHorizontal: 24 },
   mealCard: {
     backgroundColor: "#FFF",
@@ -263,8 +409,6 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     marginBottom: 12,
     elevation: 1,
-    shadowColor: "#000",
-    shadowOpacity: 0.01,
     borderLeftWidth: 5,
     borderLeftColor: "#3498db",
   },
@@ -285,6 +429,7 @@ const styles = StyleSheet.create({
     padding: 6,
     borderRadius: 8,
   },
+
   emptyCardHorizontal: {
     backgroundColor: "#FFF",
     padding: 20,

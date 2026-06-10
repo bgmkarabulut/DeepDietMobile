@@ -38,7 +38,7 @@ export const Analyze: React.FC<AnalyzeProps> = ({
     if (useCamera) {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       if (status !== "granted")
-        return Alert.alert("Hata", "Kamera izni gerekli");
+        return Alert.alert("Error", "Camera permission is required");
       res = await ImagePicker.launchCameraAsync({
         allowsEditing: true,
         aspect: [1, 1],
@@ -67,7 +67,7 @@ export const Analyze: React.FC<AnalyzeProps> = ({
       name: filename,
       type: "image/jpeg",
     } as any);
-
+    formData.append("language", "en");
     try {
       const response = await fetch(apiUrl, {
         method: "POST",
@@ -89,12 +89,12 @@ export const Analyze: React.FC<AnalyzeProps> = ({
             image_url: image,
           });
 
-          if (error) console.log("⚠️ Supabase Kayıt Hatası:", error.message);
-          else console.log("✅ Analiz geçmişi başarıyla kaydedildi!");
+          if (error) console.log("⚠️ Supabase Error:", error.message);
+          else console.log("✅ Analysis saved to history!");
         }
       }
     } catch (e) {
-      Alert.alert("Hata", "Sunucu bağlantı hatası");
+      Alert.alert("Error", "Server connection error. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -112,7 +112,7 @@ export const Analyze: React.FC<AnalyzeProps> = ({
             <Text style={styles.backText}>← Ana Sayfa</Text>
           </TouchableOpacity>
           <Text style={styles.headerTitle}>
-            {isGuest ? "Misafir Analizi" : "Yemek Analiz Ekranı"}
+            {isGuest ? "Guest Analysis" : "Food Analyze Screen"}
           </Text>
           <View style={{ width: 70 }} />
         </View>
@@ -124,7 +124,7 @@ export const Analyze: React.FC<AnalyzeProps> = ({
           ) : (
             <View style={styles.placeholder}>
               <Text style={{ color: "#94a3b8", fontSize: 15 }}>
-                🥗 Lütfen bir fotoğraf yükleyin
+                🥗 Please upload a photo
               </Text>
             </View>
           )}
@@ -136,13 +136,13 @@ export const Analyze: React.FC<AnalyzeProps> = ({
             style={styles.actionBtn}
             onPress={() => handleImagePicker(true)}
           >
-            <Text style={styles.btnLabel}>📸 Kamera Aç</Text>
+            <Text style={styles.btnLabel}>📸 Take Photo</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.actionBtn}
             onPress={() => handleImagePicker(false)}
           >
-            <Text style={styles.btnLabel}>🖼️ Galeriden Seç</Text>
+            <Text style={styles.btnLabel}>🖼️ Select from Gallery</Text>
           </TouchableOpacity>
         </View>
 
@@ -151,7 +151,7 @@ export const Analyze: React.FC<AnalyzeProps> = ({
           <View style={styles.resultBox}>
             <View style={styles.totalBadge}>
               <Text style={styles.totalKcal}>{result.total_calories}</Text>
-              <Text style={styles.kcalLabel}>TOPLAM KALORİ (KCAL)</Text>
+              <Text style={styles.kcalLabel}>TOTAL CALORIES (KCAL)</Text>
             </View>
 
             {result.detections.map((d: any, i: number) => (
@@ -168,7 +168,9 @@ export const Analyze: React.FC<AnalyzeProps> = ({
 
             {result.ai_advice && (
               <View style={styles.aiAdviceCard}>
-                <Text style={styles.aiTitle}>✨ DeepDiet AI Diyet Analizi</Text>
+                <Text style={styles.aiTitle}>
+                  ✨ DeepDiet AI Nutrition Analysis
+                </Text>
                 <Text style={styles.aiContent}>{result.ai_advice}</Text>
               </View>
             )}
@@ -177,7 +179,7 @@ export const Analyze: React.FC<AnalyzeProps> = ({
 
         {image && !loading && (
           <TouchableOpacity style={styles.analyzeBtn} onPress={startAnalysis}>
-            <Text style={styles.analyzeText}>Şimdi Analiz Et</Text>
+            <Text style={styles.analyzeText}>Analyze Now</Text>
           </TouchableOpacity>
         )}
 

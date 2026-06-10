@@ -10,7 +10,6 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-
 export default function ProfileScreen({ session, onSignOut, isGuest }: any) {
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -23,7 +22,26 @@ export default function ProfileScreen({ session, onSignOut, isGuest }: any) {
     height: "175",
     age: "28",
   });
+  const [targetInputs, setTargetInputs] = useState({
+    goal_type: "lose_weight",
+    activity_level: "moderate",
+    training_days: "3",
+  });
+  const GOALS = [
+    "lose_weight",
+    "maintain_weight",
+    "gain_weight",
+    "build_muscle",
+    "lose_fat",
+  ];
 
+  const ACTIVITIES = [
+    "sedentary",
+    "light",
+    "moderate",
+    "active",
+    "very_active",
+  ];
   useEffect(() => {
     // 🌟 GÜVENLİK DUVARI 1: Eğer misafir ise veya session null ise veritabanına sorgu atma
     if (isGuest || !session?.user) {
@@ -54,6 +72,19 @@ export default function ProfileScreen({ session, onSignOut, isGuest }: any) {
           age: String(data.age ?? "28"),
         });
       }
+      const { data: targetData } = await supabase
+        .from("targets")
+        .select("*")
+        .eq("user_id", session.user.id)
+        .maybeSingle();
+
+      if (targetData) {
+        setTargetInputs({
+          goal_type: targetData.goal_type || "lose_weight",
+          activity_level: targetData.activity_level || "moderate",
+          training_days: String(targetData.training_days || 3),
+        });
+      }
     } catch (err) {
       console.error("Profil çekilirken hata:", err);
     } finally {
@@ -63,11 +94,9 @@ export default function ProfileScreen({ session, onSignOut, isGuest }: any) {
 
   // VERİTABANINA MANUEL GİRİŞİ KAYDETME FONKSİYONU
   const handleSaveProfile = async () => {
-    // 🌟 GÜVENLİK DUVARI 3: Misafir koruması
     if (isGuest || !session?.user) {
       Alert.alert(
-        "Misafir Modu",
-        "Profil bilgilerinizi kaydetmek için lütfen hesap oluşturun.",
+        "Guest users cannot save profile data. Please sign up to access this feature.",
       );
       return;
     }
@@ -83,12 +112,13 @@ export default function ProfileScreen({ session, onSignOut, isGuest }: any) {
       isNaN(numHeight) ||
       isNaN(numAge)
     ) {
-      Alert.alert("Hata", "Lütfen tüm alanları geçerli sayılarla doldurun.");
+      Alert.alert("Error", "Please fill all fields with valid numbers.");
       return;
     }
 
     try {
       setLoading(true);
+
       const { error } = await supabase
         .from("users")
         .update({
@@ -99,15 +129,40 @@ export default function ProfileScreen({ session, onSignOut, isGuest }: any) {
         })
         .eq("id", session.user.id);
 
-      if (!error) {
-        Alert.alert("Başarılı 🎉", "Profil bilgileriniz güncellendi.");
-        setIsEditingStats(false);
-        fetchProfile();
-      } else {
-        Alert.alert("Hata", "Veritabanına kaydedilirken bir sorun oluştu.");
+      if (error) {
+        Alert.alert("Error", "Profile update failed: " + error.message);
+        return;
       }
+
+      const { error: targetError } = await supabase.from("targets").upsert(
+        {
+          user_id: session.user.id,
+          goal_type: targetInputs.goal_type,
+          activity_level: targetInputs.activity_level,
+          training_days: parseInt(targetInputs.training_days),
+        },
+        { onConflict: "user_id" },
+      );
+
+      if (targetError) {
+        Alert.alert("Error", targetError.message);
+        return;
+      }
+
+      Alert.alert(
+        "Success",
+        "Profile and target information updated successfully.",
+      );
+      setTargetInputs({
+        goal_type: targetInputs.goal_type,
+        activity_level: targetInputs.activity_level,
+        training_days: targetInputs.training_days,
+      });
+      setIsEditingStats(false);
+      fetchProfile();
     } catch (err) {
       console.error(err);
+      Alert.alert("Error", "An unexpected error occurred.");
     } finally {
       setLoading(false);
     }
@@ -219,6 +274,85 @@ export default function ProfileScreen({ session, onSignOut, isGuest }: any) {
               }
             />
           </View>
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Goal</Text>
+
+            <View style={styles.optionContainer}>
+              {GOALS.map((goal) => (
+                <TouchableOpacity
+                  key={goal}
+                  style={[
+                    styles.optionButton,
+                    targetInputs.goal_type === goal &&
+                      styles.optionButtonActive,
+                  ]}
+                  onPress={() =>
+                    setTargetInputs((prev) => ({
+                      ...prev,
+                      goal_type: goal,
+                    }))
+                  }
+                >
+                  <Text
+                    style={[
+                      styles.optionText,
+                      targetInputs.goal_type === goal &&
+                        styles.optionTextActive,
+                    ]}
+                  >
+                    {goal.replace(/_/g, " ")}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Activity Level</Text>
+
+            <View style={styles.optionContainer}>
+              {ACTIVITIES.map((activity) => (
+                <TouchableOpacity
+                  key={activity}
+                  style={[
+                    styles.optionButton,
+                    targetInputs.activity_level === activity &&
+                      styles.optionButtonActive,
+                  ]}
+                  onPress={() =>
+                    setTargetInputs((prev) => ({
+                      ...prev,
+                      activity_level: activity,
+                    }))
+                  }
+                >
+                  <Text
+                    style={[
+                      styles.optionText,
+                      targetInputs.activity_level === activity &&
+                        styles.optionTextActive,
+                    ]}
+                  >
+                    {activity.replace(/_/g, " ")}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Training Days</Text>
+
+            <TextInput
+              style={styles.textInput}
+              keyboardType="numeric"
+              value={targetInputs.training_days}
+              onChangeText={(text) =>
+                setTargetInputs((prev) => ({
+                  ...prev,
+                  training_days: text,
+                }))
+              }
+            />
+          </View>
 
           <TouchableOpacity
             style={styles.saveProfileBtn}
@@ -257,6 +391,43 @@ export default function ProfileScreen({ session, onSignOut, isGuest }: any) {
               <Text style={styles.statValue}>
                 {isGuest ? "28" : (profile?.age ?? "28")} years old
               </Text>
+            </View>
+            <View style={styles.statsGrid}>
+              <View style={styles.statCard}>
+                <Text style={styles.statLabel}>Goal</Text>
+
+                <Text style={styles.statValue}>
+                  {targetInputs.goal_type
+                    .replace("_", " ")
+                    .replace(/\b\w/g, (c) => c.toUpperCase())}
+                </Text>
+              </View>
+
+              <View style={styles.statCard}>
+                <Text style={styles.statLabel}>Training</Text>
+
+                <Text style={styles.statValue}>
+                  {targetInputs.training_days} Days
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.statsGrid}>
+              <View style={styles.statCard}>
+                <Text style={styles.statLabel}>Activity</Text>
+
+                <Text style={styles.statValue}>
+                  {targetInputs.activity_level
+                    .replace("_", " ")
+                    .replace(/\b\w/g, (c) => c.toUpperCase())}
+                </Text>
+              </View>
+
+              <View style={styles.statCard}>
+                <Text style={styles.statLabel}>Status</Text>
+
+                <Text style={styles.statValue}>Active</Text>
+              </View>
             </View>
           </View>
         </>
@@ -306,6 +477,34 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 4,
     borderRadius: 20,
+  },
+  optionContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+
+  optionButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    backgroundColor: "#FFF",
+  },
+
+  optionButtonActive: {
+    backgroundColor: "#2E7D32",
+    borderColor: "#2E7D32",
+  },
+
+  optionText: {
+    color: "#334155",
+    fontWeight: "600",
+  },
+
+  optionTextActive: {
+    color: "#FFF",
   },
   premiumText: { fontWeight: "bold", fontSize: 11, color: "#333" },
   editActionRow: {
